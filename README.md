@@ -89,6 +89,8 @@ SO2::SO2()
 
 Vikit contains camera models, some math and interpolation functions that we need. Vikit is a catkin project, therefore, download it into your catkin workspace source folder.
 
+ros2 仓库: [https://github.com/integralrobotics/rpg_vikit.git](https://github.com/integralrobotics/rpg_vikit.git)
+
 For well-known reasons, ROS2 does not have a direct global parameter server and a simple method to obtain the corresponding parameters. For details, please refer to https://discourse.ros.org/t/ros2-global-parameter-server-status/10114/11. I use a special way to get camera parameters in Vikit. While the method I've provided so far is quite simple and not perfect, it meets my needs. More contributions to improve `rpg_vikit` are hoped.
 
 ```bash
