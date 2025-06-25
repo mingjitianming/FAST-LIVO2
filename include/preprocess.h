@@ -25,32 +25,32 @@ enum LiDARFeature
 {
   Nor,
   Poss_Plane,
-  Real_Plane,
-  Edge_Jump,
-  Edge_Plane,
-  Wire,
+  Real_Plane,  // 直线
+  Edge_Jump,   // 边缘跳跃点
+  Edge_Plane, // 直线边缘
+  Wire,   // 线缆
   ZeroPoint
 };
 enum Surround
 {
-  Prev,
-  Next
+  Prev,  // 前一个点
+  Next  // 后一个点
 };
 enum E_jump
 {
   Nr_nor,
-  Nr_zero,
-  Nr_180,
-  Nr_inf,
-  Nr_blind
+  Nr_zero, // 与发射方向夹角小于10度   入射角很大
+  Nr_180,  // 与发射方向夹角大于170度  入射角很大
+  Nr_inf,  // 超出探测范围
+  Nr_blind // 在盲区
 };
 
 struct orgtype
 {
-  double range;
-  double dista;
-  double angle[2];
-  double intersect;
+  double range;  // XY平面投影点的range值
+  double dista;  // 与下一个点的距离
+  double angle[2]; // 当前点与前后两个点组成的两个向量，分别与当前点发射方向的余弦值
+  double intersect; // 当前点与前后两个点组成的两个向量的点乘结果
   E_jump edj[2];
   LiDARFeature ftype;
   orgtype()
@@ -148,6 +148,7 @@ public:
   vector<orgtype> typess[128]; // maximum 128 line lidar
   int lidar_type, point_filter_num, N_SCANS, SCAN_RATE;
   
+  // 盲区距离/盲区距离平方
   double blind, blind_sqr;
   bool feature_enabled, given_offset_time;
   std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>> pub_full;

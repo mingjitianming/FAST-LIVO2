@@ -333,6 +333,7 @@ void ImuProcess::UndistortPcl(LidarMeasureGroup &lidar_meas, StatesGroup &state_
 
       if (stamp2Sec(tail->header.stamp) < prop_beg_time) continue;
 
+      // 角速度，加速度 均值滤波
       angvel_avr << 0.5 * (head->angular_velocity.x + tail->angular_velocity.x), 0.5 * (head->angular_velocity.y + tail->angular_velocity.y),
           0.5 * (head->angular_velocity.z + tail->angular_velocity.z);
 
@@ -351,6 +352,7 @@ void ImuProcess::UndistortPcl(LidarMeasureGroup &lidar_meas, StatesGroup &state_
 
       // imu_time = stamp2Sec(head->header.stamp) - first_lidar_time;
 
+      // 去除加速度和角速度的零偏 (bias_g, bias_a) 并归一化加速度
       angvel_avr -= state_inout.bias_g;
       acc_avr = acc_avr * G_m_s2 / mean_acc.norm() - state_inout.bias_a;
 
@@ -542,6 +544,7 @@ void ImuProcess::UndistortPcl(LidarMeasureGroup &lidar_meas, StatesGroup &state_
   // printf("[ IMU ] time forward: %lf, backward: %lf.\n", t1 - t0, omp_get_wtime() - t1);
 }
 
+// IMU递推位姿并进行畸变矫正
 void ImuProcess::Process2(LidarMeasureGroup &lidar_meas, StatesGroup &stat, PointCloudXYZI::Ptr cur_pcl_un_)
 {
   double t1, t2, t3;

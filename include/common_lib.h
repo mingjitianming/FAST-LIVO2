@@ -107,8 +107,8 @@ typedef struct pointWithVar
   Eigen::Vector3d point_i;     // point in the imu body frame
   Eigen::Vector3d point_w;     // point in the world frame
   Eigen::Matrix3d var_nostate; // the var removed the state covarience
-  Eigen::Matrix3d body_var;
-  Eigen::Matrix3d var;
+  Eigen::Matrix3d body_var; // 雷达系下的协方差
+  Eigen::Matrix3d var;  // 在world下的协方差 包括雷达观测误差与投影变换误差
   Eigen::Matrix3d point_crossmat;
   Eigen::Vector3d normal;
   pointWithVar()

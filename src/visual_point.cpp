@@ -54,6 +54,7 @@ void VisualPoint::deleteFeatureRef(Feature *ftr)
   }
 }
 
+// 选择最小观测角的数据
 bool VisualPoint::getCloseViewObs(const Vector3d &framepos, Feature *&ftr, const Vector2d &cur_px) const
 {
   // TODO: get frame with same point of view AND same pyramid level!

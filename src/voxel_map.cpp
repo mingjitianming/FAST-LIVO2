@@ -12,24 +12,69 @@ which is included as part of this source code package.
 
 #include "voxel_map.h"
 using namespace Eigen;
+
+// calcBodyCov 函数的作用是计算一个3D点 pb 在某个测量范围 (range_inc)
+// 和角度分辨率 (degree_inc) 下的协方差矩阵 cov Pixel-level Extrinsic Self
+// Calibration of High Resolution LiDAR and Camera in Targetless Environments
 void calcBodyCov(Eigen::Vector3d &pb, const float range_inc, const float degree_inc, Eigen::Matrix3d &cov)
 {
   if (pb[2] == 0) pb[2] = 0.0001;
   float range = sqrt(pb[0] * pb[0] + pb[1] * pb[1] + pb[2] * pb[2]);
   float range_var = range_inc * range_inc;
   Eigen::Matrix2d direction_var;
+  // 用于将角度 degree_inc
+  // 转换为弧度。这个矩阵表示方向角的方差，假设在两个方向上的角度误差是相同且独立的。
+  // 该矩阵用于计算点云测量误差对方向的不确定性贡献，特别是在 LiDAR 或 3D
+  // 传感器处理中
   direction_var << pow(sin(DEG2RAD(degree_inc)), 2), 0, 0, pow(sin(DEG2RAD(degree_inc)), 2);
   Eigen::Vector3d direction(pb);
   direction.normalize();
   Eigen::Matrix3d direction_hat;
+  // 这个矩阵 direction_hat 是 direction 的反对称矩阵，主要用于旋转变换。用于
+  // 描述 direction 向量的旋转操作。这里 direction_hat 充当旋转轴的作用。
+  // direction 作为原始方向向量，base_vector1 和 base_vector2 作为垂直于
+  // direction 的两个正交基向量 这样就形成了一个
+  // 局部正交坐标系，可用于误差传播、旋转变换或者协方差计算
   direction_hat << 0, -direction(2), direction(1), direction(2), 0, -direction(0), -direction(1), direction(0), 0;
+  // 这样得到的 base_vector1 不会与 direction共线，而且内积为0，相互垂直，因此它可以用作一个基向量
   Eigen::Vector3d base_vector1(1, 1, -(direction(0) + direction(1)) / direction(2));
   base_vector1.normalize();
+  // base_vector2 是 base_vector1 和 direction
+  // 叉乘得到的正交向量，这两个向量构成了 pb 方向上的正交平面。 direction
+  // 作为原始方向向量 base_vector1 和 base_vector2 作为垂直于 direction
+  // 的两个正交基向量 这样就形成了一个
+  // 局部正交坐标系，可用于误差传播、旋转变换或者协方差计算。
   Eigen::Vector3d base_vector2 = base_vector1.cross(direction);
   base_vector2.normalize();
   Eigen::Matrix<double, 3, 2> N;
+  // 计算投影矩阵 N
+  // 由 base_vector1 和 base_vector2 组成的 正交投影矩阵。
+  // 作用是将三维误差（XYZ方向上的误差）投影到 垂直于 direction
+  // 的平面上，即构造了 pb 方向上的局部误差坐标系。 N形成一个 2D
+  // 子空间，该子空间 垂直于 direction，即 N 代表的是与 direction
+  // 正交的平面坐标系。 任何测量误差如果是角度误差或方向误差，都会沿着 N
+  // 方向传播。 N 选取了 垂直于 direction
+  // 的平面上的两个正交方向，用于建模误差传播。
   N << base_vector1(0), base_vector2(0), base_vector1(1), base_vector2(1), base_vector1(2), base_vector2(2);
+  // 计算测量误差传播矩阵 A
+  // direction_hat 乘以 N 相当于对投影后的误差进行 方向变换。range
+  // 作为距离尺度因子，影响误差在 A 里的传播。
+  // 由于测量误差主要来自于测距噪声和方向角度噪声，这个变换 A 把角度误差转换到点
+  // pb 的局部坐标系中。 range 作为距离尺度因子，影响误差在 A 里的传播。
+  // direction_hat 是 direction
+  // 方向的反对称矩阵，它的作用是模拟向量的叉乘（外积） 由于 direction_hat
+  // 相当于叉乘操作，所以它确保误差传播后的结果位于 direction 正交的平面上。 A
+  // 计算了由于角度误差的影响，测量点如何偏移到 direction
+  // 垂直的平面上，并且误差传播的方向是由 direction_hat * N 确定的！用于 描述
+  // direction 向量的旋转操作。这里 direction_hat 充当旋转轴的作用。
   Eigen::Matrix<double, 3, 2> A = range * direction_hat * N;
+  // 协方差矩阵 cov 的计算包含两个主要部分：
+  // cov=(测距误差贡献)+(角度误差贡献) range_var 是测距误差的方差。
+  // direction 是归一化方向向量，因此 direction * direction^T 形成一个
+  // 沿测量方向的误差协方差矩阵。这个部分 仅在 direction
+  // 方向上有误差，而垂直方向误差为 0。 direction_var 是
+  // 角度误差协方差矩阵，其中误差方差 pow(sin(DEG2RAD(degree_inc)), 2)
+  // 影响测量点位置。 A 负责将角度误差传播到 三维坐标系中。
   cov = direction * range_var * direction.transpose() + A * direction_var * A.transpose();
 }
 
@@ -112,8 +157,10 @@ void VoxelOctoTree::init_plane(const std::vector<pointWithVar> &points, VoxelPla
   J_Q << 1.0 / plane->points_size_, 0, 0, 0, 1.0 / plane->points_size_, 0, 0, 0, 1.0 / plane->points_size_;
   // && evalsReal(evalsMid) > 0.05
   //&& evalsReal(evalsMid) > 0.01
+  // 小于阀值认为是平面
   if (evalsReal(evalsMin) < planer_threshold_)
   {
+    // Efficient and Probabilistic Adaptive Voxel Mapping for Accurate Online LiDAR Odometry 按照论文公式7计算
     for (int i = 0; i < points.size(); i++)
     {
       Eigen::Matrix<double, 6, 3> J;
@@ -398,6 +445,8 @@ void VoxelMapManager::StateEstimation(StatesGroup &state_propagat)
   I_STATE.setIdentity();
 
   bool flg_EKF_inited, flg_EKF_converged, EKF_stop_flg = 0;
+  // 设定最大迭代次数 config_setting_.max_iterations_，进行循环：
+  // 这段代码的主要功能是将机体坐标系下的激光雷达点云转换到世界坐标系，并计算每个点在世界坐标系下的协方差矩阵，该协方差考虑了机体坐标系下的测量噪声、旋转估计误差和平移估计误差的传播
   for (int iterCount = 0; iterCount < config_setting_.max_iterations_; iterCount++)
   {
     double total_residual = 0.0;
@@ -405,14 +454,17 @@ void VoxelMapManager::StateEstimation(StatesGroup &state_propagat)
     TransformLidar(state_.rot_end, state_.pos_end, feats_down_body_, world_lidar);
     M3D rot_var = state_.cov.block<3, 3>(0, 0);
     M3D t_var = state_.cov.block<3, 3>(3, 3);
+    // 更新pv_list_中pv的point_b,point_w,var,body_car
     for (size_t i = 0; i < feats_down_body_->size(); i++)
     {
       pointWithVar &pv = pv_list_[i];
       pv.point_b << feats_down_body_->points[i].x, feats_down_body_->points[i].y, feats_down_body_->points[i].z;
       pv.point_w << world_lidar->points[i].x, world_lidar->points[i].y, world_lidar->points[i].z;
 
-      M3D cov = body_cov_list_[i];
+      M3D cov = body_cov_list_[i]; //该点在 机体坐标系 下的协方差矩阵。（传感器噪声）
       M3D point_crossmat = cross_mat_list_[i];
+      // 此处的point_crossmat是imu系下的，与论文公式不一致，可能存在问题
+      // https: // github.com/hku-mars/FAST-LIVO2/issues/89
       cov = state_.rot_end * cov * state_.rot_end.transpose() + (-point_crossmat) * rot_var * (-point_crossmat.transpose()) + t_var;
       pv.var = cov;
       pv.body_var = body_cov_list_[i];
@@ -421,6 +473,7 @@ void VoxelMapManager::StateEstimation(StatesGroup &state_propagat)
 
     // double t1 = omp_get_wtime();
 
+    // 调用 BuildResidualListOMP 计算点到最近平面的距离 dis_to_plane_。
     BuildResidualListOMP(pv_list_, ptpl_list_);
 
     // build_residual_time += omp_get_wtime() - t1;
@@ -568,15 +621,18 @@ void VoxelMapManager::BuildVoxelMap()
 
   std::vector<pointWithVar> input_points;
 
+  // Efficient and Probabilistic Adaptive Voxel Mapping for Accurate Online LiDAR Odometry
   for (size_t i = 0; i < feats_down_world_->size(); i++)
   {
     pointWithVar pv;
     pv.point_w << feats_down_world_->points[i].x, feats_down_world_->points[i].y, feats_down_world_->points[i].z;
     V3D point_this(feats_down_body_->points[i].x, feats_down_body_->points[i].y, feats_down_body_->points[i].z);
     M3D var;
+    // 雷达点测量协方差
     calcBodyCov(point_this, config_setting_.dept_err_, config_setting_.beam_err_, var);
     M3D point_crossmat;
     point_crossmat << SKEW_SYM_MATRX(point_this);
+    // 与论文有差异，https://github.com/hku-mars/FAST-LIVO2/issues/89
     var = (state_.rot_end * extR_) * var * (state_.rot_end * extR_).transpose() +
           (-point_crossmat) * state_.cov.block<3, 3>(0, 0) * (-point_crossmat).transpose() + state_.cov.block<3, 3>(3, 3);
     pv.var = var;
@@ -675,6 +731,7 @@ void VoxelMapManager::BuildResidualListOMP(std::vector<pointWithVar> &pv_list, s
   double voxel_size = config_setting_.max_voxel_size_;
   double sigma_num = config_setting_.sigma_num_;
   std::mutex mylock;
+  // ptpl_list：存储 PointToPlane 结构的点到平面残差
   ptpl_list.clear();
   std::vector<PointToPlane> all_ptpl_list(pv_list.size());
   std::vector<bool> useful_ptpl(pv_list.size());
@@ -688,6 +745,10 @@ void VoxelMapManager::BuildResidualListOMP(std::vector<pointWithVar> &pv_list, s
     omp_set_num_threads(MP_PROC_NUM);
     #pragma omp parallel for
   #endif
+  //计算点到平面（PointToPlane）残差，并存储在 ptpl_list 中。
+  //遍历点云数据（pv_list），并在体素地图（voxel_map_） 中寻找对应的体素（Voxel）。
+  //如果找不到匹配的体素，则寻找邻近体素，并计算点到平面的残差。
+  //支持 OpenMP 并行计算，以提高计算效率。
   for (int i = 0; i < index.size(); i++)
   {
     pointWithVar &pv = pv_list[i];
@@ -698,6 +759,10 @@ void VoxelMapManager::BuildResidualListOMP(std::vector<pointWithVar> &pv_list, s
       if (loc_xyz[j] < 0) { loc_xyz[j] -= 1.0; }
     }
     VOXEL_LOCATION position((int64_t)loc_xyz[0], (int64_t)loc_xyz[1], (int64_t)loc_xyz[2]);
+    // voxel_map_：哈希表，存储体素位置（VOXEL_LOCATION）和对应的八叉体（VoxelOctoTree）
+    // all_ptpl_list：临时存储所有点到平面残差。
+    // useful_ptpl：记录哪些点成功找到对应的残差计算结果。
+    // 在 voxel_map_ 中查找 position 对应的体素
     auto iter = voxel_map_.find(position);
     if (iter != voxel_map_.end())
     {
@@ -739,6 +804,15 @@ void VoxelMapManager::BuildResidualListOMP(std::vector<pointWithVar> &pv_list, s
   }
 }
 
+// 这段代码实现了 八叉树体素地图（Voxel Octree
+// Map）中的单点残差计算，用于确定一个 3D 点 pv 在当前层级 current_layer
+// 是否与存储在八叉树 current_octo 中的某个平面匹配，并计算其置信度 prob
+// 及相关参数 single_ptpl。 pv,包含世界坐标点 point_w 及其方差 var 等信息的点。
+// 当前八叉树体素的节点，存储 plane_ptr_（即当前节点代表的平面信息）。
+// 这段代码是用于在多层体素八叉树中寻找与给定点最匹配的平面，并计算相关残差信息。
+// single_ptpl存储最优匹配的平面信息（如法向量、中心点、协方差等）。
+// 该函数可能用于点云配准（如LiDAR
+// SLAM）中的面元匹配环节，通过寻找点与局部地图中平面结构的对应关系，构建残差项用于非线性优化（如Gauss-Newton或Levenberg-Marquardt算法），优化位姿估计。
 void VoxelMapManager::build_single_residual(pointWithVar &pv, const VoxelOctoTree *current_octo, const int current_layer, bool &is_sucess,
                                             double &prob, PointToPlane &single_ptpl)
 {
@@ -751,17 +825,20 @@ void VoxelMapManager::build_single_residual(pointWithVar &pv, const VoxelOctoTre
   {
     VoxelPlane &plane = *current_octo->plane_ptr_;
     Eigen::Vector3d p_world_to_center = p_w - plane.center_;
+    // 点到平面的垂直距离（dis_to_plane）和到中心的平面投影距离（range_dis）
     float dis_to_plane = fabs(plane.normal_(0) * p_w(0) + plane.normal_(1) * p_w(1) + plane.normal_(2) * p_w(2) + plane.d_);
     float dis_to_center = (plane.center_(0) - p_w(0)) * (plane.center_(0) - p_w(0)) + (plane.center_(1) - p_w(1)) * (plane.center_(1) - p_w(1)) +
                           (plane.center_(2) - p_w(2)) * (plane.center_(2) - p_w(2));
     float range_dis = sqrt(dis_to_center - dis_to_plane * dis_to_plane);
 
+    // 若投影距离在radius_k * plane.radius_范围内，认为点可能属于该平面
     if (range_dis <= radius_k * plane.radius_)
     {
       Eigen::Matrix<double, 1, 6> J_nq;
       J_nq.block<1, 3>(0, 0) = p_w - plane.center_;
       J_nq.block<1, 3>(0, 3) = -plane.normal_;
       double sigma_l = J_nq * plane.plane_var_ * J_nq.transpose();
+      // 通过雅可比矩阵将平面参数的协方差（plane.plane_var_）和点的协方差（pv.var）传播到点面距离的方差（sigma_l）
       sigma_l += plane.normal_.transpose() * pv.var * plane.normal_;
       if (dis_to_plane < sigma_num * sqrt(sigma_l))
       {
@@ -797,6 +874,7 @@ void VoxelMapManager::build_single_residual(pointWithVar &pv, const VoxelOctoTre
   }
   else
   {
+    // 未达最大层数，遍历所有子节点（最多8个），递归调用build_single_residual深入下一层。达到最大层数时停止递归。
     if (current_layer < max_layer)
     {
       for (size_t leafnum = 0; leafnum < 8; leafnum++)
@@ -950,8 +1028,14 @@ void VoxelMapManager::mapJet(double v, double vmin, double vmax, uint8_t &r, uin
   b = (uint8_t)(255 * db);
 }
 
+// 体素地图的滑动更新，主要作用是随着传感器的移动，管理体素地图，移除超出范围的体素数据
 void VoxelMapManager::mapSliding()
 {
+  // position_last_，当前传感器的位置（可能是 LiDAR 位置）。
+  // last_slide_position：上次触发滑动更新时的传感器位置。
+  //.norm() 计算两次位置的欧几里得距离（L2 范数）。
+  // config_setting_.sliding_thresh：滑动更新的阈值，只有当传感器移动超过该阈值时，才进行地图滑动更新。
+  // 只有当传感器移动距离足够大时，才会触发地图滑动，避免频繁更新导致计算量过大。
   if((position_last_ - last_slide_position).norm() < config_setting_.sliding_thresh)
   {
     std::cout<<RED<<"[DEBUG]: Last sliding length "<<(position_last_ - last_slide_position).norm()<<RESET<<"\n";

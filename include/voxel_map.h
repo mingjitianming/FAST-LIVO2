@@ -69,16 +69,16 @@ typedef struct PointToPlane
 typedef struct VoxelPlane
 {
   Eigen::Vector3d center_;
-  Eigen::Vector3d normal_;
-  Eigen::Vector3d y_normal_;
-  Eigen::Vector3d x_normal_;
-  Eigen::Matrix3d covariance_;
-  Eigen::Matrix<double, 6, 6> plane_var_;
-  float radius_ = 0;
-  float min_eigen_value_ = 1;
-  float mid_eigen_value_ = 1;
-  float max_eigen_value_ = 1;
-  float d_ = 0;
+  Eigen::Vector3d normal_;  // 平面法向量
+  Eigen::Vector3d y_normal_; // 中间特征值对应的向量，垂直于平面法向量的法向量
+  Eigen::Vector3d x_normal_; // 最大特征值对应的向量，垂直于平面法向量的法向量
+  Eigen::Matrix3d covariance_;  // 用于构建plane的点云的协方差
+  Eigen::Matrix<double, 6, 6> plane_var_; // 平面协方差
+  float radius_ = 0; // 最大特征值的平方根
+  float min_eigen_value_ = 1; // 最小特征值
+  float mid_eigen_value_ = 1; // 中间特征值
+  float max_eigen_value_ = 1; // 最大特征值
+  float d_ = 0; // 平面截距参数
   int points_size_ = 0;
   bool is_plane_ = false;
   bool is_init_ = false;
@@ -126,6 +126,7 @@ struct DS_POINT
 
 void calcBodyCov(Eigen::Vector3d &pb, const float range_inc, const float degree_inc, Eigen::Matrix3d &cov);
 
+// 八叉树节点
 class VoxelOctoTree
 {
 
@@ -138,9 +139,9 @@ public:
   VoxelOctoTree *leaves_[8];
   double voxel_center_[3]; // x, y, z
   std::vector<int> layer_init_num_;
-  float quater_length_;
+  float quater_length_;  // 四分之一的voxel尺寸
   float planer_threshold_;
-  int points_size_threshold_;
+  int points_size_threshold_;  // 计算plane的阈值
   int update_size_threshold_;
   int max_points_num_;
   int max_layer_;
@@ -193,10 +194,11 @@ public:
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr voxel_map_pub_;
   std::unordered_map<VOXEL_LOCATION, VoxelOctoTree *> voxel_map_;
 
-  PointCloudXYZI::Ptr feats_undistort_;
-  PointCloudXYZI::Ptr feats_down_body_;
-  PointCloudXYZI::Ptr feats_down_world_;
+  PointCloudXYZI::Ptr feats_undistort_;  // 去畸变的点云
+  PointCloudXYZI::Ptr feats_down_body_;  // 将采样点云 in lidiar frame
+  PointCloudXYZI::Ptr feats_down_world_; // points in world frame
 
+  // lidar to imu extrinsic
   M3D extR_;
   V3D extT_;
   float build_residual_time, ekf_time;
@@ -212,10 +214,10 @@ public:
 
   int feats_down_size_;
   int effct_feat_num_;
-  std::vector<M3D> cross_mat_list_;
-  std::vector<M3D> body_cov_list_;
+  std::vector<M3D> cross_mat_list_;  // imu_frame下的每个point的反对称矩阵
+  std::vector<M3D> body_cov_list_;  // lidar frame 下每个point的协方差
   std::vector<pointWithVar> pv_list_;
-  std::vector<PointToPlane> ptpl_list_;
+  std::vector<PointToPlane> ptpl_list_; //存储 PointToPlane 结构的点到平面残差
 
   VoxelMapManager(VoxelMapConfig &config_setting, std::unordered_map<VOXEL_LOCATION, VoxelOctoTree *> &voxel_map)
       : config_setting_(config_setting), voxel_map_(voxel_map)

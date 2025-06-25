@@ -1,0 +1,12 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/zmy/ros2_ws/install/vikit_py/lib/python3.12/site-packages",
+        "/home/zmy/ros2_ws/install/livox_ros_driver2/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/zmy/ros2_ws/install/vikit_py/lib/python3.12/site-packages",
+        "/home/zmy/ros2_ws/install/livox_ros_driver2/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ]
+}

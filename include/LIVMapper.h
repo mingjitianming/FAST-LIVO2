@@ -76,8 +76,8 @@ public:
   
   string root_dir;
   string lid_topic, imu_topic, seq_name, img_topic;
-  V3D extT;
-  M3D extR;
+  V3D extT; // lidar in imu(body) frame
+  M3D extR; // lidar in imu(body) frame
 
   int feats_down_size = 0, max_iterations = 0;
 
@@ -128,17 +128,17 @@ public:
   deque<sensor_msgs::msg::Imu::ConstSharedPtr> imu_buffer;
   deque<cv::Mat> img_buffer;
   deque<double> img_time_buffer;
-  vector<pointWithVar> _pv_list;
-  vector<double> extrinT;
+  vector<pointWithVar> _pv_list;  //in world_frame
+  vector<double> extrinT; // lidar in imu(body) frame
   vector<double> extrinR;
   vector<double> cameraextrinT;
   vector<double> cameraextrinR;
   int IMG_POINT_COV;
 
   PointCloudXYZI::Ptr visual_sub_map;
-  PointCloudXYZI::Ptr feats_undistort;
-  PointCloudXYZI::Ptr feats_down_body;
-  PointCloudXYZI::Ptr feats_down_world;
+  PointCloudXYZI::Ptr feats_undistort;  // lidar_frame
+  PointCloudXYZI::Ptr feats_down_body;  // lidar_frame
+  PointCloudXYZI::Ptr feats_down_world; // world_frame
   PointCloudXYZI::Ptr pcl_w_wait_pub;
   PointCloudXYZI::Ptr pcl_wait_pub;
   PointCloudXYZRGB::Ptr pcl_wait_save;

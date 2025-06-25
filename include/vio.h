@@ -25,13 +25,13 @@ which is included as part of this source code package.
 
 struct SubSparseMap
 {
-  vector<float> propa_errors;
-  vector<float> errors;
-  vector<vector<float>> warp_patch;
-  vector<int> search_levels;
-  vector<VisualPoint *> voxel_points;
-  vector<double> inv_expo_list;
-  vector<pointWithVar> add_from_voxel_map;
+  vector<float> propa_errors;  // 传播误差??
+  vector<float> errors;  // 光度误差
+  vector<vector<float>> warp_patch;  // 通过仿射变换对齐后的参考特征图像块数据
+  vector<int> search_levels;  // 特征点在ref_feature的金字塔层级
+  vector<VisualPoint *> voxel_points; // 视觉特征点
+  vector<double> inv_expo_list;  // ref 曝光时间
+  vector<pointWithVar> add_from_voxel_map;  // 从地图中添加的特征点
 
   SubSparseMap()
   {
@@ -88,19 +88,22 @@ public:
   vk::PinholeCamera *pinhole_cam;
   StatesGroup *state;
   StatesGroup *state_propagat;
-  M3D Rli, Rci, Rcl, Rcw, Jdphi_dR, Jdp_dt, Jdp_dR;
+  M3D Rli, Rci, Rcl, Rcw, Jdphi_dR;
+  M3D Jdp_dt; // P_wc对平移量P_w_i的雅可比矩阵
+  M3D Jdp_dR; // P_wc对R_wi的雅可比矩阵
   V3D Pli, Pci, Pcl, Pcw;
-  vector<int> grid_num;
+  vector<int> grid_num;  // 图片网格标记 1:地图 2:点云 0:未知
   vector<int> map_index;
   vector<int> border_flag;
-  vector<int> update_flag;
-  vector<float> map_dist;
+  vector<int> update_flag;  // 更新标志 1:更新 0:未更新
+  vector<float> map_dist;  // grid_cell中心光束距离最新的点的距离
   vector<float> scan_value;
-  vector<float> patch_buffer;
+  vector<float> patch_buffer;  // cur_frame的图像patch
   bool normal_en, inverse_composition_en, exposure_estimate_en, raycast_en, has_ref_patch_cache;
   bool ncc_en = false, colmap_output_en = false;
 
-  int width, height, grid_n_width, grid_n_height, length;
+  int width, height; // 相机图像尺寸
+  int grid_n_width, grid_n_height, length;
   double image_resize_factor;
   double fx, fy, cx, cy;
   int patch_pyrimid_level, patch_size, patch_size_total, patch_size_half, border, warp_len;
@@ -108,7 +111,7 @@ public:
 
   double img_point_cov, outlier_threshold, ncc_thre;
   
-  SubSparseMap *visual_submap;
+  SubSparseMap *visual_submap; // 临时存储和管理当前帧或局部区域的视觉特征点及其相关属性,每一帧计算重置状态
   std::vector<std::vector<V3D>> rays_with_sample_points;
 
   double compute_jacobian_time, update_ekf_time;
@@ -123,12 +126,12 @@ public:
   Eigen::MatrixXd K, H_sub_inv;
 
   ofstream fout_camera, fout_colmap;
-  unordered_map<VOXEL_LOCATION, VOXEL_POINTS *> feat_map;
-  unordered_map<VOXEL_LOCATION, int> sub_feat_map; 
-  unordered_map<int, Warp *> warp_map;
-  vector<VisualPoint *> retrieve_voxel_points;
-  vector<pointWithVar> append_voxel_points;
-  FramePtr new_frame_;
+  unordered_map<VOXEL_LOCATION, VOXEL_POINTS *> feat_map;  // 视觉特征点地图
+  unordered_map<VOXEL_LOCATION, int> sub_feat_map;  // 上一帧雷达点是否在当前帧图像的视野中
+  unordered_map<int, Warp *> warp_map;  // 不使用Normal时的 仿射变换矩阵和金字塔层级
+  vector<VisualPoint *> retrieve_voxel_points;  // img划分的grid_cell对应地图点云的最近点
+  vector<pointWithVar> append_voxel_points;  // 临时存储待添加到视觉地图的新特征点
+  FramePtr new_frame_;  // 当前帧
   cv::Mat img_cp, img_rgb, img_test;
 
   enum CellType

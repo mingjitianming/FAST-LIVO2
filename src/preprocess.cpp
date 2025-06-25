@@ -22,7 +22,7 @@ Preprocess::Preprocess() : feature_enabled(0), lidar_type(AVIA), blind(0.01), po
   SCAN_RATE = 10;
   group_size = 8;
   disA = 0.01;
-  disA = 0.1; // B?
+  disB = 0.1; // B?
   p2l_ratio = 225;
   limit_maxmid = 6.25;
   limit_midmin = 6.25;
@@ -124,6 +124,7 @@ void Preprocess::avia_handler(const livox_ros_driver2::msg::CustomMsg::SharedPtr
         double range = pl_full[i].x * pl_full[i].x + pl_full[i].y * pl_full[i].y + pl_full[i].z * pl_full[i].z;
         if (range < blind_sqr) continue;
 
+        // 分线束存储点云
         bool is_new = false;
         if ((abs(pl_full[i].x - pl_full[i - 1].x) > 1e-7) || (abs(pl_full[i].y - pl_full[i - 1].y) > 1e-7) ||
             (abs(pl_full[i].z - pl_full[i - 1].z) > 1e-7))
@@ -730,6 +731,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
   int last_state = 0;
   int plane_type;
 
+  // 计算点是否为直线上的点
   for (uint i = head; i < plsize2; i++)
   {
     if (types[i].range < blind_sqr) { continue; }
@@ -814,6 +816,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
     last_direct = curr_direct;
   }
 
+  // 判断边缘跳跃点
   plsize2 = plsize > 3 ? plsize - 3 : 0;
   for (uint i = head + 3; i < plsize2; i++)
   {
@@ -831,6 +834,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
 
       if (types[i + m].range < blind_sqr)
       {
+        // cur_point在10米外，下一个点range在盲区内，则认为是无穷远点(超出探测范围)
         if (types[i].range > inf_bound) { types[i].edj[j] = Nr_inf; }
         else { types[i].edj[j] = Nr_blind; }
         continue;
@@ -839,6 +843,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
       vecs[j] = Eigen::Vector3d(pl[i + m].x, pl[i + m].y, pl[i + m].z);
       vecs[j] = vecs[j] - vec_a;
 
+      // 入射角过大
       types[i].angle[j] = vec_a.dot(vecs[j]) / vec_a.norm() / vecs[j].norm();
       if (types[i].angle[j] < jump_up_limit) { types[i].edj[j] = Nr_180; }
       else if (types[i].angle[j] > jump_down_limit) { types[i].edj[j] = Nr_zero; }
@@ -895,6 +900,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
     }
   }
 
+  // 填充 pl_surf, pl_corn
   int last_surface = -1;
   for (uint j = head; j < plsize; j++)
   {
@@ -948,6 +954,8 @@ void Preprocess::pub_func(PointCloudXYZI &pl, const rclcpp::Time &ct)
   output.header.stamp = ct;
 }
 
+// 检查是否是直线并计算方向
+// return 1: plane, 2: blind, 0: not plane
 int Preprocess::plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, uint i_cur, uint &i_nex, Eigen::Vector3d &curr_direct)
 {
   double group_dis = disA * types[i_cur].range + disB;
@@ -957,7 +965,7 @@ int Preprocess::plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, ui
   double two_dis;
   vector<double> disarr;
   disarr.reserve(20);
-
+  // 查找group_size个点以及group_dis范围内的点
   for (i_nex = i_cur; i_nex < i_cur + group_size; i_nex++)
   {
     if (types[i_nex].range < blind_sqr)
@@ -995,20 +1003,24 @@ int Preprocess::plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, ui
     v1[1] = pl[j].y - pl[i_cur].y;
     v1[2] = pl[j].z - pl[i_cur].z;
 
+    // 向量叉乘
     v2[0] = v1[1] * vz - vy * v1[2];
     v2[1] = v1[2] * vx - v1[0] * vz;
     v2[2] = v1[0] * vy - vx * v1[1];
 
     double lw = v2[0] * v2[0] + v2[1] * v2[1] + v2[2] * v2[2];
+    // 叉乘最大的值
     if (lw > leng_wid) { leng_wid = lw; }
   }
 
+  // 长宽比不够大
   if ((two_dis * two_dis / leng_wid) < p2l_ratio)
   {
     curr_direct.setZero();
     return 0;
   }
 
+  // 从大到小排序
   uint disarrsize = disarr.size();
   for (uint j = 0; j < disarrsize - 1; j++)
   {
@@ -1023,12 +1035,14 @@ int Preprocess::plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, ui
     }
   }
 
+  // 最小的点间距过小
   if (disarr[disarr.size() - 2] < 1e-16)
   {
     curr_direct.setZero();
     return 0;
   }
 
+  // 点间距分布不均匀
   if (lidar_type == AVIA)
   {
     double dismax_mid = disarr[0] / disarr[disarrsize / 2];
@@ -1079,6 +1093,7 @@ bool Preprocess::edge_jump_judge(const PointCloudXYZI &pl, vector<orgtype> &type
   d1 = sqrt(d1);
   d2 = sqrt(d2);
 
+  // 判断是否是边缘跳跃 这里是不是取反了？???
   if (d1 > edgea * d2 || (d1 - d2) > edgeb) { return false; }
 
   return true;

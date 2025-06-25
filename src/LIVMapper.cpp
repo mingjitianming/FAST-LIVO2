@@ -361,7 +361,9 @@ void LIVMapper::handleVIO()
   fout_pre << std::setw(20) << LidarMeasures.last_lio_update_time - _first_lidar_time << " " << euler_cur.transpose() * 57.3 << " "
             << _state.pos_end.transpose() << " " << _state.vel_end.transpose() << " " << _state.bias_g.transpose() << " "
             << _state.bias_a.transpose() << " " << V3D(_state.inv_expo_time, 0, 0).transpose() << std::endl;
-    
+
+  // pcl_w_wait_pub 存储了 VIO
+  // 处理所需的点云数据，如果为空，则直接返回，不继续处理
   if (pcl_w_wait_pub->empty() || (pcl_w_wait_pub == nullptr)) 
   {
     std::cout << "[ VIO ] No point!!!" << std::endl;
@@ -412,6 +414,7 @@ void LIVMapper::handleVIO()
 
 void LIVMapper::handleLIO() 
 {    
+  //计算当前旋转矩阵 _state.rot_end 对应的 欧拉角 (euler_cur)，并存储日志
   euler_cur = RotMtoEuler(_state.rot_end);
   fout_pre << setw(20) << LidarMeasures.last_lio_update_time - _first_lidar_time << " " << euler_cur.transpose() * 57.3 << " "
            << _state.pos_end.transpose() << " " << _state.vel_end.transpose() << " " << _state.bias_g.transpose() << " "
@@ -443,7 +446,7 @@ void LIVMapper::handleLIO()
   }
 
   double t1 = omp_get_wtime();
-
+  // 体素地图管理器 (voxelmap_manager) 进行 状态估计，基于扩展卡尔曼滤波 (EKF)非线性优化方法。
   voxelmap_manager->StateEstimation(state_propagat);
   _state = voxelmap_manager->state_;
   _pv_list = voxelmap_manager->pv_list_;
@@ -494,10 +497,12 @@ void LIVMapper::handleLIO()
     voxelmap_manager->pv_list_[i].point_w << world_lidar->points[i].x, world_lidar->points[i].y, world_lidar->points[i].z;
     M3D point_crossmat = voxelmap_manager->cross_mat_list_[i];
     M3D var = voxelmap_manager->body_cov_list_[i];
+    // 计算点云不确定性 协方差 (var)，综合考虑传感器误差和状态协方差 _state.cov
     var = (_state.rot_end * extR) * var * (_state.rot_end * extR).transpose() +
           (-point_crossmat) * _state.cov.block<3, 3>(0, 0) * (-point_crossmat).transpose() + _state.cov.block<3, 3>(3, 3);
     voxelmap_manager->pv_list_[i].var = var;
   }
+  //更新体素地图 (UpdateVoxelMap)
   voxelmap_manager->UpdateVoxelMap(voxelmap_manager->pv_list_);
   std::cout << "[ LIO ] Update Voxel Map" << std::endl;
   _pv_list = voxelmap_manager->pv_list_;
@@ -505,7 +510,7 @@ void LIVMapper::handleLIO()
   double t4 = omp_get_wtime();
 
   if(voxelmap_manager->config_setting_.map_sliding_en)
-  {
+  {   //进行地图滑动窗口更新，删除过时数据，提高计算效率。
     voxelmap_manager->mapSliding();
   }
   
@@ -1047,8 +1052,10 @@ bool LIVMapper::sync_packages(LidarMeasureGroup &meas)
       // printf("[ Data Cut ] LIO \n");
       // printf("[ Data Cut ] img_capture_time: %lf \n", img_capture_time);
       m.imu.clear();
-      m.lio_time = img_capture_time;
+      m.lio_time =
+          img_capture_time; // ?? 若相机频率高于LiDAR频率，img_capture_time从front获取是否合理？
       mtx_buffer.lock();
+      // 收集上一次更新到当前更新的imu数据
       while (!imu_buffer.empty())
       {
         if (stamp2Sec(imu_buffer.front()->header.stamp) > m.lio_time) break;
